@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Slot Machine Test (No Real Money)</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #020617;
+      --panel-soft: #111827;
+      --accent: #22c55e;
+      --accent-2: #38bdf8;
+      --text: #e5e7eb;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(1200px 600px at 50% -200px, #1e293b, var(--bg));
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      position: fixed;
+      left: 32px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .games { display: flex; flex-direction: column; gap: 10px; }
+
+    .game-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(180deg, #22c55e, #16a34a);
+      color: #052e16;
+      border: none;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 140ms ease, filter 140ms ease;
+    }
+
+    .game-btn:hover { filter: brightness(1.05); }
+
+    .game-btn:disabled, .game-btn.disabled {
+      background: linear-gradient(180deg, #1f2937, #111827);
+      color: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    .sidebar-credits {
+      background: #020617;
+      border-radius: 16px;
+      padding: 12px 16px;
+      min-width: 120px;
+    }
+
+    .machine {
+      background: #020617;
+      border-radius: 20px;
+      padding: 24px;
+      width: 340px;
+      text-align: center;
+    }
+
+    .reels {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin: 14px 0;
+    }
+
+    .reel {
+      background: linear-gradient(180deg, #0b1220, #111827);
+      border-radius: 14px;
+      height: 76px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+    }
+
+    button {
+      margin: 6px;
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .mines-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      margin: 16px 0;
+    }
+
+    .tile {
+      background: #111827;
+      border-radius: 10px;
+      height: 52px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+    }
+
+    .tile.safe { background: #22c55e; }
+    .tile.mine { background: #ef4444; }
+    .tile.disabled { pointer-events: none; opacity: 0.6; }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <div class="games">
+      <button class="game-btn" id="btnSlots">🎰 Slots</button>
+      <button class="game-btn" id="btnMines">💣 Mines</button>
+      <button class="game-btn" id="btnBlackjack">🃏 Blackjack</button>
+    </div>
+    <div class="sidebar-credits">
+      Credits: <span id="creditsSidebar">0</span>
+    </div>
+  </div>
+
+  <!-- Slots -->
+  <div class="machine" id="slotsGame">
+    <h2>Slots</h2>
+    <div>Credits: <span id="credits">0</span></div>
+    <div class="reels">
+      <div class="reel" id="r1">❔</div>
+      <div class="reel" id="r2">❔</div>
+      <div class="reel" id="r3">❔</div>
+    </div>
+    <button id="spinBtn">Spin (-1)</button>
+    <button id="addCredits">Add 10</button>
+    <div id="result"></div>
+  </div>
+
+  <!-- Mines -->
+  <div class="machine" id="minesGame" style="display:none">
+    <h2>Mines</h2>
+    <div>Credits: <span id="creditsMines">0</span></div>
+    <div class="mines-grid" id="minesGrid"></div>
+    <button id="startMines">Start (-2)</button>
+    <button id="cashOutBtn" disabled>Cash Out</button>
+    <div id="minesResult"></div>
+  </div>
+
+  <!-- Blackjack -->
+  <div class="machine" id="blackjackGame" style="display:none">
+    <h2>Blackjack</h2>
+    <div>Credits: <span id="creditsBJ">0</span></div>
+    <div id="bjStatus">Press Deal</div>
+    <button id="dealBtn">Deal (-5)</button>
+    <button id="hitBtn" disabled>Hit</button>
+    <button id="standBtn" disabled>Stand</button>
+  </div>
+
+  <script>
+    // --- Common ---
+    const SYMBOLS = ['🍒','🍋','🔔','⭐','7️⃣'];
+    const STORAGE_KEY = 'slot_test_credits';
+    let credits = Number(localStorage.getItem(STORAGE_KEY)) || 10;
+    let spinning = false;
+
+    const creditsEl = document.getElementById('credits');
+    const creditsSidebar = document.getElementById('creditsSidebar');
+    const spinBtn = document.getElementById('spinBtn');
+    const resultEl = document.getElementById('result');
+
+    function updateCredits() {
+      creditsEl.textContent = credits;
+      creditsSidebar.textContent = credits;
+      document.getElementById('creditsMines').textContent = credits;
+      document.getElementById('creditsBJ').textContent = credits;
+      spinBtn.disabled = credits < 1;
+      dealBtn.disabled = credits < 2;
+      document.getElementById('startMines').disabled = credits < 2;
+      localStorage.setItem(STORAGE_KEY, credits);
+    }
+
+    // --- Slots ---
+    spinBtn.onclick = () => {
+      if (credits < 1 || spinning) return;
+      spinning = true;
+      credits--;
+      updateCredits();
+      const vals = [0,1,2].map(()=>SYMBOLS[Math.floor(Math.random()*SYMBOLS.length)]);
+      document.getElementById('r1').textContent = vals[0];
+      document.getElementById('r2').textContent = vals[1];
+      document.getElementById('r3').textContent = vals[2];
+      if (vals[0]===vals[1] && vals[1]===vals[2]) { credits +=5; resultEl.textContent='Win +5'; }
+      else resultEl.textContent='No win';
+      spinning = false;
+      updateCredits();
+    };
+
+    document.getElementById('addCredits').onclick = () => { credits +=10; updateCredits(); };
+
+    // --- Game switching ---
+    const slotsGame = document.getElementById('slotsGame');
+    const minesGame = document.getElementById('minesGame');
+    const blackjackGame = document.getElementById('blackjackGame');
+
+    document.getElementById('btnSlots').onclick = ()=>{ slotsGame.style.display='block'; minesGame.style.display='none'; blackjackGame.style.display='none'; };
+    document.getElementById('btnMines').onclick = ()=>{ slotsGame.style.display='none'; minesGame.style.display='block'; blackjackGame.style.display='none'; };
+    document.getElementById('btnBlackjack').onclick = ()=>{ slotsGame.style.display='none'; minesGame.style.display='none'; blackjackGame.style.display='block'; };
+
+    // --- Mines ---
+    const minesGrid = document.getElementById('minesGrid');
+    const minesResult = document.getElementById('minesResult');
+    const cashOutBtn = document.getElementById('cashOutBtn');
+    let minePositions = [];
+    let minesWin = 0;
+    let minesActive = false;
+
+    document.getElementById('startMines').onclick = () => {
+      if(credits<2) return;
+      credits -=2; updateCredits();
+      minesGrid.innerHTML=''; minesResult.textContent=''; minesWin=2; minesActive=true;
+      cashOutBtn.disabled=false;
+      minePositions = Array.from({length:25},(_,i)=>i).sort(()=>Math.random()-0.5).slice(0,3);
+      for(let i=0;i<25;i++){
+        const t=document.createElement('div');
+        t.className='tile';
+        t.onclick=()=>clickTile(t,i);
+        minesGrid.appendChild(t);
+      }
+    };
+
+    function clickTile(tile,i){
+      if(!minesActive) return;
+      tile.classList.add('disabled');
+      if(minePositions.includes(i)){ tile.classList.add('mine'); tile.textContent='💣'; minesResult.textContent='Boom!'; endMines(false); }
+      else { tile.classList.add('safe'); tile.textContent='💎'; minesWin+=2; }
+    }
+
+    cashOutBtn.onclick = ()=>endMines(true);
+
+    function endMines(cash){
+      minesActive=false; cashOutBtn.disabled=true;
+      if(cash){ credits+=minesWin; minesResult.textContent=`Cashed out ${minesWin}`; }
+      updateCredits();
+    }
+
+    // --- Blackjack ---
+    const suits = ['♠','♥','♦','♣'];
+    const values = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+
+    let deck = [];
+    let playerHand = [];
+    let dealerHand = [];
+    let bjActive = false;
+
+    const creditsBJ = document.getElementById('creditsBJ');
+    const bjStatus = document.getElementById('bjStatus');
+    const dealBtn = document.getElementById('dealBtn');
+    const hitBtn = document.getElementById('hitBtn');
+    const standBtn = document.getElementById('standBtn');
+
+    function createDeck() {
+        deck = [];
+        for(const suit of suits){
+            for(const value of values){
+                deck.push({suit,value});
+            }
+        }
+    }
+
+    function shuffleDeck() {
+        deck.sort(()=>Math.random()-0.5);
+    }
+
+    function cardValue(card){
+        if(card.value==='A') return 11;
+        if(['J','Q','K'].includes(card.value)) return 10;
+        return Number(card.value);
+    }
+
+    function handTotal(hand){
+        let total = hand.reduce((sum,c)=>sum+cardValue(c),0);
+        let aces = hand.filter(c=>c.value==='A').length;
+        while(total>21 && aces>0){ total-=10; aces--; }
+        return total;
+    }
+
+    function renderHands(){
+        bjStatus.innerHTML = `
+            Player: ${playerHand.map(c=>c.value+c.suit).join(' ')} (Total: ${handTotal(playerHand)})<br>
+            Dealer: ${dealerHand.map(c=>c.suit==='?'?'??':c.value+c.suit).join(' ')}
+        `;
+    }
+
+    dealBtn.onclick = () => {
+        if(credits<5) return;
+        credits-=5; updateCredits();
+        bjActive = true;
+        createDeck();
+        shuffleDeck();
+        playerHand = [deck.pop(), deck.pop()];
+        dealerHand = [deck.pop(), {suit:'?', value:'?'}];
+        hitBtn.disabled=false;
+        standBtn.disabled=false;
+        dealBtn.disabled=true;
+        renderHands();
+    }
+
+    hitBtn.onclick = () => {
+        if(!bjActive) return;
+        playerHand.push(deck.pop());
+        if(handTotal(playerHand)>21){
+            endBJ(false);
+        } else renderHands();
+    }
+
+    standBtn.onclick = () => {
+        if(!bjActive) return;
+        dealerHand[1] = deck.pop(); 
+        while(handTotal(dealerHand)<17){
+            dealerHand.push(deck.pop());
+        }
+        const playerTotal = handTotal(playerHand);
+        const dealerTotal = handTotal(dealerHand);
+        if(dealerTotal>21 || playerTotal>dealerTotal){
+            endBJ(true);
+        } else {
+            endBJ(false);
+        }
+    }
+
+    function endBJ(win){
+        bjActive=false;
+        hitBtn.disabled=true;
+        standBtn.disabled=true;
+        dealBtn.disabled=false;
+        if(win){
+            credits+=10; 
+            bjStatus.innerHTML += `<br>Player wins! +10 credits`;
+        } else {
+            bjStatus.innerHTML += `<br>Player loses!`;
+        }
+        updateCredits();
+    }
+
+    updateCredits();
+  </script>
+</body>
+</html>
